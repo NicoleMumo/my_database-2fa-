@@ -1,38 +1,42 @@
 <?php
-class User {
-    private $conn;
-    private $table_name = "users";
+require_once 'Database.php';
 
-    public $username;
-    public $email;
-    public $password;
-    public $twofa_secret;
+function send2FACode($email, $code) {
+    $subject = "Your 2FA Code";
+    $message = "Your two-factor authentication code is: $code";
+    $headers = "From: no-reply@yourdomain.com";
+    mail($email, $subject, $message, $headers); // PHP's mail function to send email
+}
 
-    public function __construct($db) {
-        $this->conn = $db;
-    }
+if ($_SERVER['REQUEST_METHOD'] == 'POST') {
+    $username = $_POST['username'];
+    $password = $_POST['password'];
 
-    public function create() {
-        $query = "INSERT INTO " . $this->table_name . " (username, email, password, twofa_secret) VALUES (:username, :email, :password, :twofa_secret)";
-        $stmt = $this->conn->prepare($query);
+    // Fetch user from the database
+    $stmt = $pdo->prepare("SELECT * FROM users WHERE username = :username");
+    $stmt->execute([':username' => $username]);
+    $user = $stmt->fetch();
 
-        $stmt->bindParam(":username", $this->username);
-        $stmt->bindParam(":email", $this->email);
-        $stmt->bindParam(":password", password_hash($this->password, PASSWORD_BCRYPT));
-        $stmt->bindParam(":twofa_secret", $this->twofa_secret);
+    if ($user && password_verify($password, $user['password'])) {
+        // Generate a random 6-digit 2FA code
+        $code = rand(100000, 999999);
 
-        if ($stmt->execute()) {
-            return true;
-        }
+        // Save the 2FA code temporarily in the session
+        session_start();
+        $_SESSION['2fa_code'] = $code;
+        $_SESSION['username'] = $username;
 
-        return false;
-    }
+        // Send the 2FA code to the user's email
+        send2FACode($user['email'], $code);
 
-    public function read() {
-        $query = "SELECT * FROM " . $this->table_name;
-        $stmt = $this->conn->prepare($query);
-        $stmt->execute();
-        return $stmt;
+        // Prompt for 2FA code
+        echo '<form method="POST" action="verify_2fa.php">
+                  <label for="2fa_code">Enter the 2FA code sent to your email:</label>
+                  <input type="text" name="2fa_code" required>
+                  <button type="submit">Verify</button>
+              </form>';
+    } else {
+        echo 'Invalid credentials';
     }
 }
 ?>
